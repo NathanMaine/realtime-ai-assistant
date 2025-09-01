@@ -19,11 +19,12 @@ Developed on Ubuntu 24.04.3 LTS, the application harnesses a robust tech stack i
 Getting Started
 Clone the repository, set up your environment with the provided requirements.txt, and configure your xAI API key to begin. The app is ready for local deployment, with detailed setup instructions in docs/Setup Guide for Real Time.md. Whether for personal use or team collaboration, this assistant adapts to your meeting needs, making it a versatile tool for the modern workplace.
 Future Potential
-Planned enhancements include live audio streaming for continuous transcription, multi-user support, and advanced features like speaker identification. Contributions are welcome to expand its capabilities and reach.
+Planned enhancements include live audio streaming for continuous transcription, multi-user support, and advanced features like improved speaker identification. Contributions are welcome to expand its capabilities and reach.
 
 ## Features
 - Records 5-second audio clips from your microphone via web interface.
 - Transcribes audio using the Whisper model.
+- Performs speaker diarization to distinguish between speakers (requires Hugging Face token).
 - Queries the xAI Grok API for summaries and action items.
 - Provides text-to-speech feedback.
 - Real-time communication via WebSockets.
@@ -34,7 +35,7 @@ Planned enhancements include live audio streaming for continuous transcription, 
 3. Create venv: `python3 -m venv venv`
 4. Activate: `source venv/bin/activate`
 5. Install: `pip install -r requirements.txt`
-6. Set API key: Create `.env` with `XAI_API_KEY=your-api-key`.
+6. Set API keys: Create `.env` with `XAI_API_KEY=your-api-key` and optionally `HF_TOKEN=your-huggingface-token` for speaker diarization.
 
 ## Usage
 - Run: `python app.py` or `uvicorn app:app --reload`

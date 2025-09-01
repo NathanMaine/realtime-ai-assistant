@@ -15,17 +15,23 @@ from dotenv import load_dotenv
 import asyncio
 import base64
 import io
+from pyannote.audio import Pipeline
+import torchaudio
 
 # Load environment variables
 load_dotenv()
 
 # --- Global Constants & Initialization ---
 API_KEY = os.getenv("XAI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")  # For pyannote.audio
 if not API_KEY:
     raise ValueError("API_KEY not found in .env file. Please set XAI_API_KEY.")
+if not HF_TOKEN:
+    print("Warning: HF_TOKEN not found. Speaker diarization will be disabled.")
 API_URL = "https://api.x.ai/v1/chat/completions"
 MODEL_RATE = 16000
-FILENAME = "temp_audio.wav"
+FILENAME_WAV = "temp_audio.wav"
+FILENAME_WEBM = "temp_audio.webm"
 
 app = FastAPI()
 
@@ -35,6 +41,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # --- Cache expensive resources ---
 whisper_model = None
 tts_engine = None
+diarization_pipeline = None
 
 def get_whisper_model():
     global whisper_model
@@ -49,6 +56,21 @@ def get_tts_engine():
         tts_engine.setProperty('rate', 180)
     return tts_engine
 
+def get_diarization_pipeline():
+    global diarization_pipeline
+    if diarization_pipeline is None and HF_TOKEN:
+        try:
+            print("Loading speaker diarization pipeline...")
+            diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=HF_TOKEN)
+            if torch.cuda.is_available():
+                diarization_pipeline.to(torch.device("cuda"))
+            print("Speaker diarization pipeline loaded successfully.")
+        except Exception as e:
+            print(f"Failed to load diarization pipeline: {e}")
+            print("Speaker diarization will be disabled.")
+            diarization_pipeline = None
+    return diarization_pipeline
+
 # --- Core Functions ---
 async def process_audio(audio_data: bytes):
     """Processes audio data and returns transcription and LLM response."""
@@ -58,33 +80,74 @@ async def process_audio(audio_data: bytes):
         # Check if it's a WAV file (starts with RIFF)
         if len(audio_data) > 12 and audio_data[:4] == b'RIFF':
             print("Detected WAV format")
+            filename = FILENAME_WAV
             # Save as WAV
-            with open(FILENAME, 'wb') as f:
+            with open(filename, 'wb') as f:
                 f.write(audio_data)
         else:
-            print("Detected non-WAV format, attempting to convert")
-            # Try to handle other formats (like WebM from MediaRecorder)
-            # For now, just save as is and hope Whisper can handle it
-            with open(FILENAME, 'wb') as f:
+            print("Detected non-WAV format, saving as WebM")
+            filename = FILENAME_WEBM
+            # Save as WebM
+            with open(filename, 'wb') as f:
                 f.write(audio_data)
         
         print("Audio file saved, loading Whisper model...")
         
-        # Transcribe
+        # Transcribe with segments
         model = get_whisper_model()
-        result = model.transcribe(FILENAME, fp16=False)
+        result = model.transcribe(filename, fp16=False)
         transcribed_text = result.get("text", "").strip()
+        segments = result.get("segments", [])
         
         print(f"Transcription result: '{transcribed_text}'")
-
-        if not transcribed_text:
+        
+        # Perform speaker diarization if available
+        diarized_text = transcribed_text
+        if HF_TOKEN and segments:
+            pipeline = get_diarization_pipeline()
+            if pipeline is not None:
+                try:
+                    # Load audio for diarization
+                    waveform, sample_rate = torchaudio.load(filename)
+                    if sample_rate != 16000:
+                        resampler = torchaudio.transforms.Resample(sample_rate, 16000)
+                        waveform = resampler(waveform)
+                    
+                    # Perform diarization
+                    diarization = pipeline({"waveform": waveform, "sample_rate": 16000})
+                    
+                    # Assign speakers to segments
+                    diarized_segments = []
+                    for segment in segments:
+                        start = segment['start']
+                        end = segment['end']
+                        text = segment['text'].strip()
+                        if text:
+                            # Find the speaker for this segment
+                            speakers = []
+                            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                                if turn.start <= start < turn.end or turn.start < end <= turn.end or (start <= turn.start and end >= turn.end):
+                                    speakers.append(speaker)
+                            speaker = speakers[0] if speakers else "Unknown"
+                            diarized_segments.append(f"{speaker}: {text}")
+                    
+                    diarized_text = " ".join(diarized_segments)
+                    print(f"Diarized text: '{diarized_text}'")
+                except Exception as e:
+                    print(f"Diarization error: {e}")
+                    print("Falling back to regular transcription without speaker labels.")
+                    # Fall back to original text
+            else:
+                print("Diarization pipeline not available, using regular transcription.")
+        
+        if not diarized_text:
             return {"error": "No speech detected. Please speak clearly and ensure your microphone is working."}
 
         # Query LLM
-        llm_response = await query_llm(transcribed_text)
+        llm_response = await query_llm(diarized_text)
         if llm_response:
             return {
-                "transcription": transcribed_text,
+                "transcription": diarized_text,
                 "summary": llm_response.get("summary", ""),
                 "actions": llm_response.get("actions", [])
             }
@@ -97,12 +160,13 @@ async def process_audio(audio_data: bytes):
         traceback.print_exc()
         return {"error": f"Processing error: {str(e)}"}
     finally:
-        if os.path.exists(FILENAME):
-            os.remove(FILENAME)
+        for f in [FILENAME_WAV, FILENAME_WEBM]:
+            if os.path.exists(f):
+                os.remove(f)
 
 async def query_llm(text):
     """Sends transcription to the LLM and returns the parsed response."""
-    prompt = f'You are a meeting assistant. Summarize the following text and extract action items. Format your response as a JSON object with two keys: "summary" and "actions". The "actions" array should contain objects with "task", "assignee", and "due" keys.\n\nText: {text}'
+    prompt = f'You are a meeting assistant. The following text includes speaker labels (e.g., SPEAKER_00, SPEAKER_01). Summarize the meeting content, considering different speakers for richer context, and extract action items. Format your response as a JSON object with two keys: "summary" and "actions". The "actions" array should contain objects with "task", "assignee", and "due" keys.\n\nText: {text}'
     payload = {"model": "grok-3", "messages": [{"role": "user", "content": prompt}]}
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     try:
