@@ -1,16 +1,41 @@
-fastapi
-uvicorn[standard]
-websockets
-pyaudio==0.2.14
-openai-whisper
-requests
-pyttsx3
-pandas
-numpy
-torch
-torchvision
-python-dotenv
-jinja2
-pyannote.audio
-torchaudio
+# Real-Time AI Meeting Assistant - Python Dependencies
+# Updated: September 1, 2025
+# Tested on: Python 3.12.3, Ubuntu 24.04.3 LTS
+
+# Web Framework & Server
+fastapi>=0.104.0          # Modern async web framework
+uvicorn[standard]>=0.24.0 # ASGI server with WebSocket support
+websockets>=12.0          # WebSocket protocol support
+
+# Audio Processing
+pyaudio==0.2.14           # Audio capture (Linux-specific version)
+webrtcvad>=2.0.10         # Voice Activity Detection
+torchaudio>=2.1.0         # PyTorch audio processing
+
+# AI & Machine Learning
+openai-whisper>=20231117  # Speech-to-text transcription
+torch>=2.1.0              # PyTorch ML framework
+torchvision>=0.16.0       # Computer vision (dependency)
+pyannote.audio>=3.1.0     # Speaker diarization
+
+# API & HTTP
+requests>=2.31.0          # HTTP client for API calls
+
+# Text-to-Speech
+pyttsx3>=2.90             # TTS engine
+
+# Data Processing
+pandas>=2.1.0             # Data manipulation
+numpy>=1.24.0             # Numerical computing
+
+# Environment & Configuration
+python-dotenv>=1.0.0      # Environment variable management
+
+# Template Engine
+jinja2>=3.1.0             # Template rendering (FastAPI dependency)
+
+# Development & Debugging
+# pytest>=7.4.0           # Testing framework (optional)
+# black>=23.0.0           # Code formatting (optional)
+# flake8>=6.0.0           # Linting (optional)
 

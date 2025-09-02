@@ -1,35 +1,193 @@
 # Architecture of Real-Time AI Meeting Assistant
 
 ## System Overview
-The Real-Time AI Meeting Assistant is a Streamlit application designed to transcribe audio, summarize meetings, and extract action items using the xAI Grok API.
+The Real-Time AI Meeting Assistant is a sophisticated FastAPI-based application with WebSocket support that provides continuous voice activity detection, real-time audio transcription, intelligent summarization, and action item extraction. The system processes live audio streams using advanced AI models and provides immediate feedback through a modern web interface.
 
-## Components
-- **User Interface**: Built with FastAPI and WebSockets, providing a web-based interface for recording and viewing results.
-- **Audio Capture**: Uses PyAudio to record 5-second audio clips from the default microphone, saved as a temporary WAV or WebM file.
-- **Transcription**: Employs the Whisper model (cached) to convert audio to text with timestamps, optimized for GPU if available.
-- **Speaker Diarization**: Uses pyannote.audio to identify speakers in the audio, assigning labels to transcribed segments.
-- **LLM Processing**: Queries the xAI Grok API ("grok-3" model) with a structured prompt to generate JSON responses containing summaries and actions, considering speaker context.
-- **Text-to-Speech**: Utilizes pyttsx3 to provide audible feedback.
-- **Data Storage**: Maintains session state with a summary string and an actions DataFrame.
+## Core Components
 
-## Data Flow
-1. User clicks "Record & Analyze" to start a 5-second recording.
-2. PyAudio captures audio and saves it to `temp_audio.wav` or `temp_audio.webm`.
-3. Whisper transcribes the audio into text with timestamps.
-4. pyannote.audio performs speaker diarization to identify speakers.
-5. Transcribed segments are labeled with speakers.
-6. The diarized text is sent to the xAI API via a POST request.
-7. The API response (JSON) is parsed and used to update the UI and speak the summary.
-8. Actions are stored in a DataFrame for display.
+### 1. **Web Interface (Frontend)**
+- **Technology**: HTML5, CSS3, Vanilla JavaScript with Web Audio API
+- **Features**:
+  - Real-time audio capture using `getUserMedia()` and `MediaRecorder`
+  - Web Audio API for audio processing and resampling
+  - WebSocket client for bidirectional communication
+  - Responsive UI with status indicators and result display
+  - Microphone testing and permission handling
+  - Cross-browser compatibility (Chrome, Firefox, Edge, Safari)
+
+### 2. **FastAPI Backend Server**
+- **Technology**: FastAPI with WebSocket support, Uvicorn ASGI server
+- **Endpoints**:
+  - `GET /`: Serves the main web interface
+  - `WebSocket /ws`: Handles real-time audio processing
+  - Static file serving for CSS/JS assets
+- **Features**:
+  - Asynchronous request handling
+  - CORS middleware for cross-origin requests
+  - Session management for per-connection state
+  - Error handling and logging
+
+### 3. **Voice Activity Detection (VAD) Engine**
+- **Technology**: WebRTC VAD with custom frame processing
+- **Configuration**:
+  - `VAD_AGGRESSIVENESS`: Sensitivity level (0-3, current: 1)
+  - `SILENCE_THRESHOLD`: Frames before processing (current: 50 = 1.5s)
+  - `FRAME_DURATION`: Analysis window (30ms)
+- **Features**:
+  - Real-time speech/silence detection
+  - Automatic audio segmentation
+  - Configurable sensitivity and timing
+  - Debug logging for troubleshooting
+
+### 4. **Audio Processing Pipeline**
+- **Input Formats**: WebM (MediaRecorder), WAV, Raw PCM (Web Audio API)
+- **Processing Steps**:
+  1. Base64 decoding of WebSocket audio data
+  2. Format detection and conversion to WAV
+  3. Audio validation (minimum length checks)
+  4. Sample rate verification (16kHz required)
+- **Features**:
+  - Multi-format audio support
+  - Automatic format conversion
+  - Audio quality validation
+  - Debug file generation
+
+### 5. **Speech Recognition Engine**
+- **Technology**: OpenAI Whisper (base model)
+- **Features**:
+  - GPU acceleration support via torch
+  - Automatic language detection
+  - Timestamp generation
+  - Confidence scoring
+  - Model caching for performance
+
+### 6. **Speaker Diarization (Optional)**
+- **Technology**: pyannote.audio with Hugging Face integration
+- **Requirements**: Valid HF_TOKEN and accepted repository terms
+- **Features**:
+  - Speaker identification and labeling
+  - Segment-based speaker assignment
+  - Integration with transcription results
+  - Fallback to regular transcription if unavailable
+
+### 7. **AI Processing & Summarization**
+- **Technology**: xAI Grok API ("grok-beta" model)
+- **Features**:
+  - Intelligent meeting summarization
+  - Action item extraction and structuring
+  - Context-aware processing
+  - JSON response parsing
+  - Error handling for API failures
+
+### 8. **Text-to-Speech Engine**
+- **Technology**: pyttsx3 with system TTS engines
+- **Features**:
+  - Audio feedback for summaries
+  - Configurable voice settings
+  - Asynchronous processing
+  - Accessibility support
+
+## Data Flow Architecture
+
+### Real-Time Audio Processing Flow
+```
+1. User Speech → Microphone → Web Audio API
+2. Audio Processing → Resampling (16kHz) → PCM Encoding
+3. Base64 Encoding → WebSocket Transmission
+4. Server Reception → Base64 Decoding → Audio Buffer
+5. VAD Analysis → Speech/Silence Detection
+6. Speech Accumulation → Silence Threshold Check
+7. Audio Segmentation → Format Conversion (WAV)
+8. Whisper Transcription → Text Generation
+9. Speaker Diarization (Optional) → Speaker Labels
+10. xAI API Processing → Summarization & Actions
+11. Result Formatting → WebSocket Response
+12. UI Update → Display Results
+```
+
+### Session Management
+- **Per-Connection State**: AudioSession class manages individual user sessions
+- **Buffer Management**: Separate buffers for incoming audio and accumulated speech
+- **State Tracking**: Speech detection, silence counting, processing status
+- **Resource Cleanup**: Automatic buffer clearing and session reset
 
 ## Technology Stack
-- **Frontend**: FastAPI with WebSockets, HTML/CSS/JavaScript
-- **Audio**: PyAudio, wave, torchaudio
-- **AI**: Whisper (via openai-whisper), pyannote.audio for diarization, xAI Grok API
-- **TTS**: pyttsx3
-- **Data**: pandas, numpy
-- **Environment**: Python 3.10+, torch (for GPU)
 
-## Scalability and Limitations
-- Current design is single-user and sequential, limiting real-time performance.
-- Future enhancements could include live streaming and multi-user support.
+### Backend
+- **Framework**: FastAPI with WebSocket support
+- **Server**: Uvicorn ASGI server
+- **Audio Processing**: WebRTC VAD, PyAudio, wave, torchaudio
+- **AI/ML**: OpenAI Whisper, pyannote.audio, torch
+- **API Integration**: requests, xAI Grok API
+- **Data Processing**: pandas, numpy
+- **Environment**: python-dotenv, os
+
+### Frontend
+- **Core**: HTML5, CSS3, Vanilla JavaScript
+- **Audio**: Web Audio API, MediaRecorder API
+- **Communication**: WebSocket API
+- **UI**: Responsive design with modern CSS
+
+### Development & Deployment
+- **Version Control**: Git
+- **Environment**: Python virtual environment (.venv)
+- **Dependencies**: requirements.txt with pinned versions
+- **Configuration**: .env file for API keys
+- **Platform**: Ubuntu 24.04.3 LTS (optimized)
+
+## Performance Optimizations
+
+### Caching & Resource Management
+- **Model Caching**: Whisper and diarization models cached in memory
+- **Connection Pooling**: WebSocket connection management
+- **Buffer Optimization**: Efficient audio buffer handling
+- **GPU Acceleration**: CUDA support for AI processing
+
+### Error Handling & Resilience
+- **Graceful Degradation**: Fallback mechanisms for failed components
+- **Timeout Handling**: Configurable timeouts for API calls
+- **Resource Cleanup**: Automatic cleanup of temporary files and buffers
+- **Logging**: Comprehensive logging for debugging and monitoring
+
+## Scalability Considerations
+
+### Current Limitations
+- **Single-User Design**: One session per WebSocket connection
+- **Sequential Processing**: Audio segments processed sequentially
+- **Memory Usage**: Model loading requires significant RAM
+- **Network Dependency**: Requires stable internet for xAI API
+
+### Future Scalability Improvements
+- **Multi-User Support**: Session multiplexing and user isolation
+- **Concurrent Processing**: Parallel audio processing pipelines
+- **Distributed Architecture**: Microservices for different components
+- **Load Balancing**: Multiple server instances with load distribution
+- **Caching Layer**: Redis for session and result caching
+
+## Security & Privacy
+
+### Data Protection
+- **Local Processing**: Audio processed locally when possible
+- **API Security**: Secure API key management via environment variables
+- **WebSocket Security**: Origin validation and connection limits
+- **File Handling**: Secure temporary file creation and cleanup
+
+### Privacy Considerations
+- **Audio Data**: Processed in memory, not permanently stored
+- **API Communications**: Encrypted HTTPS connections to xAI
+- **Local Storage**: Debug files for troubleshooting (can be disabled)
+- **User Consent**: Clear microphone permission requests
+
+## Monitoring & Debugging
+
+### Built-in Diagnostics
+- **Audio Debugging**: Automatic WAV file generation for troubleshooting
+- **VAD Logging**: Real-time speech detection status
+- **Performance Metrics**: Processing time and resource usage
+- **Error Tracking**: Comprehensive error logging and reporting
+
+### External Monitoring
+- **System Resources**: CPU, GPU, and memory usage tracking
+- **API Performance**: Response times and success rates
+- **WebSocket Health**: Connection status and message throughput
+- **User Experience**: UI responsiveness and error rates

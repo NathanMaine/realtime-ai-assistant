@@ -45,10 +45,16 @@ Thumbs.db
 *.tmp
 *.temp
 temp_audio.wav
+debug_audio_*.wav
 
 # Logs
 *.log
 logs/
+
+# SSL certificates
+*.pem
+*.key
+*.crt
 
 # Node modules (if any)
 node_modules/
